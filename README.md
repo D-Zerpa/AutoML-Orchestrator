@@ -26,27 +26,12 @@ Built with **Scikit-Learn**, **Pandas**, and **XGBoost**, it supports both **Cla
 
 ---
 
-## 🚀 Installation
-
-1.  Clone this repository:
-    ```bash
-    git clone [https://github.com/your-username/mlautom.git](https://github.com/your-username/mlautom.git)
-    cd mlautom
-    ```
-
-2.  Install the required dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
-
----
-
 ## ⚡ Quick Start (AutoML Mode)
 
 The `MLOrchestrator` class provides a `run_pipeline` method that executes the entire flow in a single step. Ideal for overnight runs or quick baselines.
 
 ```python
-from mlautom import MLOrchestrator
+from orchestrator import MLOrchestrator
 
 # 1. Initialize
 orchestrator = MLOrchestrator()
