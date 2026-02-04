@@ -143,9 +143,8 @@ class DataExplorer:
             print("-" * 44)
 
         if self.cat_cols:
-            print(f"🔠 Categorical Frequencies (Top 5):")
-            for col in self.cat_cols[:5]: # Show max 5 to avoid spamming console
-                print(f"• {col}: {self.df[col].unique().tolist()[:10]}...") 
+            print(f"🔠 Categorical Frequencies:")
+            print(self.df[self.cat_cols].value_counts(normalize=True)) 
             print("-" * 44)
 
 
@@ -421,7 +420,7 @@ class FeatureEngineer:
             else:
                 working_df = self.df_with_outliers
 
-            null_counts = working_df.isnull().sum()
+            null_counts = working_df.isnull().sum().sum()
             if null_counts == 0:
                 print("✅ Nulls:       No missing values detected.")
                 self.df_with_outliers = working_df
@@ -723,7 +722,7 @@ class ModelTrainer:
                             'dataset': dataset,
                             'model': name,
                             'type': self.problem_type,
-                            'Coef': model.coef_,
+                            'Coef': getattr(model, 'coef_', getattr(model, 'feature_importances_', None)),
                             'RMSE': round(root_mean_squared_error(y_test, y_test_pred),2),
                             'train_score': train_score,
                             'test_score': test_score,
@@ -746,7 +745,7 @@ class ModelTrainer:
             self.best_dataset_name = final_df.iloc[0]['dataset']
             best_score = final_df.iloc[0]['test_score']
 
-            print(f"🏆 Winner: '{self.best_model_name}' on '{self.best_dataset_name}' (Test Score: {best_score['test_score']:.4f})")
+            print(f"🏆 Winner: '{self.best_model_name}' on '{self.best_dataset_name}' (Test Score: {best_score:.4f})")
 
         return final_df
 
@@ -1038,7 +1037,7 @@ class MLOrchestrator:
 
 
 
-    def load_data(self, df_path: str, target: str)-> None:
+    def load_data(self, df: str | pd.DataFrame, target: str)-> None:
         """
         Loads the dataset and initializes exploration tools.
 
@@ -1053,9 +1052,13 @@ class MLOrchestrator:
 
         # Try to load the data from the path given by user.
         try:
-            df_loaded = pd.read_csv(df_path)
+            if isinstance(df, str):
+                df_loaded = pd.read_csv(df)
+
+            elif isinstance(df, pd.DataFrame):
+                df_loaded = df
         except FileNotFoundError:
-             raise FileNotFoundError(f"❌ Error: File not found at '{df_path}'")
+             raise FileNotFoundError(f"❌ Error: File not found at '{df}'")
 
         # Basic validations
         if df_loaded.empty:
@@ -1104,7 +1107,7 @@ class MLOrchestrator:
             self.visualizer.plot_correlation_matrix()
 
 
-    def prepare_features (self, save_path: str = ".", save_data: bool = True, k_features: int = 5) -> None:
+    def prepare_features (self, save_path: str = ".", save_data: bool = True, feature_selection: bool = True, k_features: int = 5) -> None:
 
         """
         Executes Feature Engineering and prepares dataset variants.
@@ -1142,7 +1145,8 @@ class MLOrchestrator:
         for key, dataset in datasets.items():
             train, test = self.preparer.auto_prepare_data(dataset=dataset,
                                                           label=key, save_data=save_data,
-                                                          save_path= self.save_path, k=k_features)
+                                                          save_path= self.save_path, feature_sel= feature_selection,
+                                                          k=k_features)
             merged_train.update(train)
             merged_test.update(test)
 
@@ -1281,7 +1285,7 @@ class MLOrchestrator:
 
         # 1. Load and initialize Explorer and Visualizer tool.
         # -----------------------------------------
-        self.load_data(df_path=df_path, target=target)
+        self.load_data(df=df_path, target=target)
 
         # 2. Data Analysis (Visual, just Data or both).
         # -----------------------------------------
