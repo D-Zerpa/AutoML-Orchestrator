@@ -1,4 +1,4 @@
-# 🤖 Orchestrator: Modular AutoML.
+# 🤖 AutoML - Orchestrator: Modular ML assistant.
 
 **Orchestrator** is a robust, modular, and easy-to-use Python library designed to streamline the End-to-End Machine Learning lifecycle. From Exploratory Data Analysis (EDA) to Model Deployment, it automates the tedious parts of Data Science while retaining full control for manual fine-tuning.
 
