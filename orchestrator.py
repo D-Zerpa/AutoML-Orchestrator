@@ -29,18 +29,16 @@ from IPython.display import display
 # ==========================================
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.feature_selection import f_classif, SelectKBest
+from sklearn.feature_selection import f_classif, f_regression, SelectKBest
 from sklearn.exceptions import ConvergenceWarning
 
 # ==========================================
 # 5. Machine Learning: Metrics
 # ==========================================
+
 from sklearn.metrics import (
-    mean_absolute_error, 
-    r2_score, 
-    accuracy_score, 
-    root_mean_squared_error
-)
+    accuracy_score, precision_score, recall_score, f1_score, 
+    classification_report, mean_absolute_error, root_mean_squared_error, r2_score, confusion_matrix)
 
 # ==========================================
 # 6. Machine Learning: Models
@@ -49,11 +47,15 @@ from sklearn.metrics import (
 from sklearn.linear_model import LogisticRegression, Lasso, Ridge, ElasticNet
 # Trees & Ensembles
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-# Support Vector Machines
-from sklearn.svm import SVR, SVC
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, StackingClassifier, StackingRegressor
+from sklearn.neighbors import KNeighborsClassifier
 # Gradient Boosting (External)
 import xgboost as xgb
+# Extras
+from sklearn.base import clone
+# Pipeline stuffs.
+from sklearn.pipeline import make_pipeline
+from sklearn.pipeline import Pipeline
 
 # ==========================================
 # 7. Global Configuration
@@ -413,8 +415,6 @@ class FeatureEngineer:
 
     def handle_nulls(self, strategy_num: str = "median", strategy_cat: str = "mode") -> None:
 
-            print(f"{"-"*28} Null handling {"-"*29}")
-
             if self.df_with_outliers is None:
                 working_df = self.explorer.df.copy()
             else:
@@ -659,6 +659,7 @@ class ModelTrainer:
 
         self.best_model_name = None
         self.best_dataset_name = None
+        self.result_df = None
 
     def add_model(self, model: str, model_object) -> None:
         self.models[model] = model_object
@@ -735,10 +736,11 @@ class ModelTrainer:
 
         if overfitting_filter:
             final_df = self.filter_results(results_df, gap_threshold)
-
+            self.result_df = final_df
         else:
             sort_metric = "test_score" if self.problem_type == "classification" else "R2_score"
             final_df = results_df.sort_values(by=sort_metric, ascending=False)
+            self.result_df = final_df
 
         if not final_df.empty:
             self.best_model_name = final_df.iloc[0]['model']
@@ -835,9 +837,7 @@ class ModelTrainer:
         grid.fit(train_data, y_train)
 
 
-        new_model_name = f"{model_name}"
-        for k, v in grid.best_params_.items():
-            new_model_name += f"_{str(k)}_{str(v)}"
+        new_model_name = f"{model_name}_optimized"
 
         # Update the model with the best Hyperparameters.
         self.models[new_model_name] = grid.best_estimator_
@@ -997,6 +997,205 @@ class ModelTrainer:
         # Updating the model database.
         self.models[model_name] = model
         print("✅ Retraining Complete. Model updated in memory.")
+
+
+    def evaluate_model(self, model_name: str  = None, dataset_name: str = None)-> None:
+        """
+        Retrains the selected model, calculates detailed metrics, 
+        and plots the performance (Confusion Matrix or Regression Plot).
+        """
+
+        # Try to initialize automatically
+
+        if model_name is None:
+            if self.best_model_name is None:
+                raise ValueError("❌ Error: No models trained yet. Run train_all_configs() first.")
+            model_name = self.best_model_name
+
+        if dataset_name is None:
+            if self.best_dataset_name is None:
+                raise ValueError("❌ Error: No best dataset found.")
+            train_key = self.best_dataset_name
+            test_key = train_key.replace("train", "test")
+        else:
+
+            if "train" in dataset_name:
+                train_key = dataset_name
+                test_key = dataset_name.replace("train", "test")
+            elif "test" in dataset_name:
+                test_key = dataset_name
+                train_key = dataset_name.replace("test", "train")
+            else:
+                raise ValueError("❌ Error: Dataset name must contain 'train' or 'test' to identify the pair.")
+
+        print(f"\n{'-'*15} 📊 DETAILED EVALUATION REPORT {'-'*15}")
+        print(f"🔎 Model: '{model_name}'")
+        print(f"📂 Dataset Pair: '{train_key}' / '{test_key}'")
+
+        # Checks if the information given by the user is alright.
+
+        if model_name not in self.models:
+            raise ValueError(f"❌ Error: Model '{model_name}' not found.")
+        
+        if train_key not in self.dict_train:
+             raise ValueError(f"❌ Error: Training data '{train_key}' not found.")
+             
+        if test_key not in self.dict_test:
+             raise ValueError(f"❌ Error: Test data '{test_key}' not found.")
+        
+        model = self.models[model_name]
+        X_train = self.dict_train[train_key]
+        y_train = self.dict_train['y_train']
+        X_test = self.dict_test[test_key]
+        y_test = self.dict_test['y_test']
+
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+
+
+        print(f"\n{'-'*5} 📉 Numerical Metrics {'-'*5}")
+
+        if self.problem_type == 'classification':
+
+            acc = accuracy_score(y_test, y_pred)
+            prec = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+            rec = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+            f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+
+            class_metrics = [
+                ["Accuracy",  f"{acc:.4f}"],
+                ["Precision (Weighted)", f"{prec:.4f}"],
+                ["Recall (Weighted)",    f"{rec:.4f}"],
+                ["F1 Score (Weighted)",  f"{f1:.4f}"]
+            ]
+            
+            print("\n" + tabulate(class_metrics, headers=["Metric", "Value"], tablefmt="fancy_grid"))
+            print("\n📋 Classification Report:")
+            print(classification_report(y_test, y_pred))
+
+            cm = confusion_matrix(y_true=y_test, y_pred=y_pred)
+            plt.figure(figsize=(6, 5))
+            sns.heatmap(cm, annot=True, fmt='d',  cmap='Blues', cbar=False)
+            plt.xlabel('Predicted Label')
+            plt.ylabel('True Label')
+            plt.title(f"Confusion Matrix of {model_name}", fontsize=14)
+            plt.tight_layout()
+            plt.show()
+
+        else:
+            mae = mean_absolute_error(y_test, y_pred)
+            rmse = root_mean_squared_error(y_test, y_pred)
+            r2 = r2_score(y_test, y_pred)
+
+            try:
+                mape = np.mean(np.abs((y_test - y_pred) / y_test)) * 100
+                mape_str = f"{mape:.2f}%"
+            except:
+                mape_str = "N/A (Zeros in target)"
+
+            metrics_data = [
+            ["R2 Score (Explained Variance)", f"{r2:.4f}"],
+            ["MAE (Mean Absolute Error)",    f"{mae:.4f}"],
+            ["RMSE (Root Mean Sq. Error)",   f"{rmse:.4f}"],
+            ["MAPE (Mean Abs. % Error)",     mape_str]]
+
+            print("\n" + tabulate(metrics_data, headers=["Metric", "Value"], tablefmt="fancy_grid"))
+
+            plt.figure(figsize=(7, 6))
+            sns.regplot(x=y_test, y=y_pred, 
+                        line_kws={"color": "red", "label": "Perfect Fit"}, 
+                        scatter_kws={"alpha": 0.5, "color": "blue"})
+            
+            plt.xlabel('True Values')
+            plt.ylabel('Predictions')
+            plt.legend()
+            plt.title(f"Regression Plot (Actual vs Pred): {model_name}", fontsize=12, weight='bold')
+            plt.show()
+
+    def _pipeline_from_config(self, dataset_name: str, model_instance)-> Pipeline:
+        """
+        Make reverse engineering using the standarized names of the models to extract the characteristics
+        needed to make a pipeline to make an stacking ensemble.
+        """
+        
+        steps = []
+
+        if "minmax" in dataset_name:
+            steps.append(MinMaxScaler())
+        elif "standard" in dataset_name:
+            steps.append(StandardScaler())
+
+        if "sel" in dataset_name:
+            score_func = f_regression if self.problem_type == 'regression' else f_classif
+            steps.append(SelectKBest(score_func=score_func, k=5))
+
+        steps.append(model_instance)
+
+        return make_pipeline(*steps)
+
+
+    def build_stacking_ensemble(self, top_n: int = 3, evaluate: bool =True)-> None:
+        
+        print(f"\n{'='*15} 🏗️ BUILDING STACKING ENSEMBLE {'='*15}")
+        # Load and filter data.
+        results_df = self.result_df.copy()
+        filtered_rdf = results_df.drop_duplicates(subset='model').head(top_n)
+
+        # UX Print: to show user the models participating
+        selected_models = filtered_rdf['model'].tolist()
+        print(f"🥇 Selected Top {top_n} unique models: {', '.join(selected_models)}")
+
+        # "Voting" system to determine if the master data will be with or without outliers.
+        with_outliers = filtered_rdf['dataset'].str.contains("with_outliers").sum()
+        without_outliers = len(filtered_rdf) - with_outliers
+
+        print(f"🗳️ Outliers Voting: {with_outliers} (With) vs {without_outliers} (Without)")
+
+        # Decide which master datasets will be used to train.
+        if with_outliers > without_outliers:
+            train_key = "X_train_with_outliers"
+
+        else:
+            train_key = "X_train_without_outliers"
+
+
+        X_train_master = self.dict_train[train_key]
+        # Get the target data.
+        y_train = self.dict_train['y_train']
+
+        # Create an estimator list with all the pipelines needed for the training.
+        estimators = []
+
+        for _, row in filtered_rdf[["dataset","model"]].iterrows():
+
+            model_name = row["model"]
+            dataset_name = row["dataset"]
+            original_model = self.models[model_name]
+            model_copy = clone(original_model) # Make a copy of the model to not re-train the original ones.
+            pipeline =  self._pipeline_from_config(dataset_name=dataset_name, model_instance=model_copy)
+            
+            # Add the estimator in the form of a tuple. That way the Stacking models will recognize the data.
+            estimators.append((model_name, pipeline))
+
+        # Train the Stacking model with the extracted information.
+        print("⏳ Training Meta-Learner (This involves internal Cross-Validation and may take a while)...")
+
+        if self.problem_type == 'classification':
+            stacking = StackingClassifier(estimators=estimators, passthrough=True, 
+                                          final_estimator=LogisticRegression(), n_jobs=-1)
+            stacking.fit(X_train_master, y_train)
+            self.models['Stacking_Ensemble'] = stacking
+
+        else:
+            stacking = StackingRegressor(estimators=estimators, passthrough=True, 
+                                         final_estimator=Ridge(), n_jobs=-1)
+            stacking.fit(X_train_master, y_train)
+            self.models['Stacking_Ensemble'] = stacking
+
+        print("🎉 Stacking Ensemble successfully trained and saved into memory!")
+        if evaluate:
+            self.evaluate_model(model_name='Stacking_Ensemble', dataset_name=train_key)
+
 
 class MLOrchestrator:
    
@@ -1196,18 +1395,19 @@ class MLOrchestrator:
                 self.trainer.add_model("RandomForestClassifier", RandomForestClassifier(random_state=42))
                 self.trainer.add_model("XGBClassifier", xgb.XGBClassifier(random_state= 42))
                 self.trainer.add_model("LogisticRegression", LogisticRegression(random_state=42))
-                self.trainer.add_model("SVC", SVC(random_state=42))
+                self.trainer.add_model("KNeighbors", KNeighborsClassifier())
             else:
                 self.trainer.add_model("RandomForestRegressor", RandomForestRegressor(random_state=42))
                 self.trainer.add_model("DecisionTreeRegressor",DecisionTreeRegressor(random_state=42))
                 self.trainer.add_model("Lasso",Lasso(random_state=42))
                 self.trainer.add_model("Ridge",Ridge(random_state=42))
-                self.trainer.add_model("SVR",SVR())
+                self.trainer.add_model("ElasticNet",ElasticNet(random_state=42))
 
         print(f"Added models for: {self.trainer.problem_type}\n{list(self.trainer.models.keys())}")
 
     def run_training_cycle(self, optimize: bool = True, overfitting_filter: bool = True, 
-                           gap_threshold: float = 0.3, display_results: bool = True, trim_models: bool = True) -> None:
+                           gap_threshold: float = 0.3, display_results: bool = True, 
+                           trim_models: bool = True, stacking_models: bool = False, stacking_top: int = 3) -> None:
 
         """
         Executes the training lifecycle: Selection -> Optimization.
@@ -1218,6 +1418,8 @@ class MLOrchestrator:
             gap_threshold (float): Max tolerated difference between Train and Test score.
             display_results (bool): Shows result tables in console/notebook.
             trim_models (bool): If True, deletes losing models from memory to save RAM.
+            stacking_models (bool): If True, builds a meta-model with the best algorithms.
+            stacking_top (int): Number of top models to include in the stacking ensemble.
         """
 
         # Make some validations to check if the data is available.
@@ -1227,6 +1429,9 @@ class MLOrchestrator:
         # First training to obtain the best Dataset.
         first_training = self.trainer.train_all_configs(overfitting_filter=overfitting_filter, gap_threshold=gap_threshold)
         
+        if stacking_models:
+                trim_models = False # Turn off the trimming, because we need all the models.
+
         # Optional result display.
         if display_results:
             print("\n📊 Preliminary Results:")
@@ -1236,11 +1441,18 @@ class MLOrchestrator:
         if optimize:
             self.trainer.optimize_model(trim_models=trim_models)
             second_training = self.trainer.train_all_configs(overfitting_filter=overfitting_filter, gap_threshold=gap_threshold)
-            
+
             # Second training display
             if display_results:
                 print("\n📊 Final Optimized Results:")
                 display(second_training)
+
+        # Optional stacking.
+        if stacking_models:
+            self.trainer.build_stacking_ensemble(top_n=stacking_top)
+        else:
+            if display_results:
+                self.trainer.evaluate_model()
 
     def save_artifacts(self) -> None:
         """
@@ -1263,7 +1475,8 @@ class MLOrchestrator:
         
     def run_pipeline(self, df_path: str, target: str, problem_type: Literal["classification", "regression"],
                      save_path: str = "./ml_project", analysis_mode: Literal["visual", "data", "all"] = "data", config_path: str = None,
-                     optimize: bool = True, overfitting_filter: bool = True, gap_threshold: float = 0.3) -> None:
+                     optimize: bool = True, overfitting_filter: bool = True, gap_threshold: float = 0.3, 
+                     stacking_models: bool = False, stacking_top: int = 3) -> None:
         """
         Runs the whole ML flow (End-to-End).
         
@@ -1276,6 +1489,8 @@ class MLOrchestrator:
             optimize: If True, run the automatic hyperparam optimization.
             overfitting_filter: Activate the filter to drop the results with too much gap between the test_score and train_score (maybe Overfitting).
             gap_threshold: Max gap allowed between Train and test scores. (eg: 0.3).
+            stacking_models (bool): If True, builds a meta-model with the best algorithms.
+            stacking_top (int): Number of top models to include in the stacking ensemble.
         """
         
         print(f"\n{'='*60}")
@@ -1307,7 +1522,9 @@ class MLOrchestrator:
             overfitting_filter=overfitting_filter, 
             gap_threshold=gap_threshold,
             display_results=True, 
-            trim_models=True    
+            trim_models=True,
+            stacking_models = stacking_models, 
+            stacking_top = stacking_top   
         )
 
         # 6. Final artifact savings.
