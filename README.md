@@ -1,4 +1,4 @@
-# 🤖 Orchestrator: Modular AutoML.
+# 🤖 AutoML - Orchestrator: Modular ML assistant (v1.1).
 
 **Orchestrator** is a robust, modular, and easy-to-use Python library designed to streamline the End-to-End Machine Learning lifecycle. From Exploratory Data Analysis (EDA) to Model Deployment, it automates the tedious parts of Data Science while retaining full control for manual fine-tuning.
 
@@ -22,6 +22,7 @@ Built with **Scikit-Learn**, **Pandas**, and **XGBoost**, it supports both **Cla
     * Trains multiple algorithms simultaneously (RandomForest, XGBoost, SVM, Linear Models, etc.).
     * **Anti-Overfitting Filter:** Automatically discards models with high variance between Train and Test scores.
 * **🔧 Hyperparameter Optimization:** Automatic `GridSearchCV` for the winning model.
+* **(NEW) Optimization by Stacking:** Takes the best models and merge them together to try to make an even better one. 
 * **💾 Production-Ready Artifacts:** Saves the best model, scalers, and encoders in a structured directory, ready for deployment.
 
 ---
@@ -64,7 +65,8 @@ orc.execute_analysis(mode="all")
 This step generates clean datasets and handles outliers.
 ```python
 # Saves encoders and intermediate CSVs to './project/datasets'
-orc.prepare_features(save_path="./project", save_data=True)
+orc.prepare_features(problem_type="classification", 
+                    save_path="./project", save_data=True)
 ```
 
 ### 3. Initialize Trainer & Add Custom Models
@@ -74,7 +76,7 @@ You can rely on defaults or inject your own model configurations.
 from sklearn.neighbors import KNeighborsClassifier
 
 # Initialize
-orc.initialize_trainer(problem_type="classification")
+orc.initialize_trainer()
 
 # Optional: Add a custom model to the roster
 knn = KNeighborsClassifier(n_neighbors=5)
@@ -122,6 +124,16 @@ my_experiment/
 
 ## 🛠️ Architecture
 
+AutoML/
+│
+├── __init__.py           
+├── orchestrator.py       # 👑 The Hub.
+├── explorer.py           # 🕵️ The Scout.
+├── preparer.py           # 🧹 The Cleaner.
+├── feat_engineer.py      # 🏗️ The Architect.
+├── trainer.py            # 🏋️ The Muscle.
+└── visualizer.py         # 🎨 The Artist.
+
 * **`DataExplorer`**: Handles data type inference (Cardinality detection) and statistical summaries.
 * **`Visualizer`**: Uses Matplotlib/Seaborn to generate distributions, boxplots, and correlation heatmaps.
 * **`FeatureEngineer`**: Applies transformations:
@@ -129,7 +141,7 @@ my_experiment/
     * Categorical Encoding (Factorization).
     * Outlier Capping (Winsorization/IQR).
 * **`DataPreparer`**: Splits data and applies Scalers (MinMax/Standard) and Feature Selection (ANOVA).
-* **`ModelTrainer`**: Manages the training loop, metric calculation (Accuracy/RMSE), and Hyperparameter Optimization (`GridSearchCV`).
+* **`ModelTrainer`**: Manages the training loop, metric calculation (Accuracy/RMSE), Hyperparameter Optimization (`GridSearchCV`) and Stacking Ensemble.
 * **`MLOrchestrator`**: The **Facade** that connects all modules into a unified workflow.
 
 ---
