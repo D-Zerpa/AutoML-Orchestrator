@@ -123,7 +123,7 @@ my_experiment/
 ```
 
 ## 🛠️ Architecture
-
+```text
 AutoML/
 │
 ├── __init__.py           
@@ -133,6 +133,7 @@ AutoML/
 ├── feat_engineer.py      # 🏗️ The Architect.
 ├── trainer.py            # 🏋️ The Muscle.
 └── visualizer.py         # 🎨 The Artist.
+```
 
 * **`DataExplorer`**: Handles data type inference (Cardinality detection) and statistical summaries.
 * **`Visualizer`**: Uses Matplotlib/Seaborn to generate distributions, boxplots, and correlation heatmaps.
