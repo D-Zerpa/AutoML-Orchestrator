@@ -2,7 +2,6 @@
 # 1. Standard Python Libraries
 # ==========================================
 import os
-import sys
 import json
 import math
 import pickle
@@ -866,10 +865,12 @@ class ModelTrainer:
         Args:
             model_name: the best model used for the training. If not given, it'll take self.best_model_name instead.
             scaler: MinMaxScaler/StandardScaler used in the dataset (if any used)
+            folder_path: directory to save the pickle file.
             selector: Selector used in the dataset (if any used)
             dataset_name: the dataset with the best results. If not given, it'll take self.best_dataset_name instead.
 
         """
+        print(f"\n{'='*15} 💾 MODEL EXPORT {'='*15}")
 
         # Initialize automatic data fetching
 
@@ -885,53 +886,71 @@ class ModelTrainer:
             dataset_name = self.best_dataset_name
             print(f"Best dataset found, saving: '{dataset_name}'...")
 
+        # Stacking logic
+
+        is_stacking = (model_name == 'Stacking_Ensemble')
+
+        if is_stacking:
+            print("🧩 Stacking Ensemble detected. Adapting export logic...")
+            # Stacking needs the raw base dataset, not the scaled one.
+            if "without_outliers" in dataset_name:
+                dataset_name = "X_train_without_outliers"
+            else:
+                dataset_name = "X_train_with_outliers"
+                
+            print(f"📂 Base dataset resolved to: '{dataset_name}'")
+            print("🚫 External Scalers/Selectors will be ignored (already baked into Stacking Pipelines).")
+            scaler = None
+            selector = None
+            
+        else:
+            print(f"📂 Dataset used: '{dataset_name}'...")
+            # Decide which scaler save with the model if a dict was given.
+            if isinstance(scaler, dict):
+                if "minmax" in dataset_name:
+                    scaler = scaler.get("minmax")
+                elif "standard" in dataset_name:
+                    scaler = scaler.get("standard")
+                else:
+                    scaler = None
+                    print("⚠️ Dataset without scaler detected. No scaler will be saved.")
 
         # Validate input data
 
-        if model_name in self.models.keys():
-            model = self.models[model_name]
-        else:
-            raise ValueError(f"No '{model_name}' found. Please check the model loading is correct and the name input.")
+        if model_name not in self.models.keys():
+            raise ValueError(f"❌ Error: No '{model_name}' found. Please check the model loading is correct.")
+        if dataset_name not in self.dict_train.keys():
+            raise ValueError(f"❌ Error: No '{dataset_name}' found. Please check the input data.")
 
-        if dataset_name in self.dict_train.keys():
-            X_train = self.dict_train[dataset_name]
-        else:
-            raise ValueError(f"No '{dataset_name}' found. Please check the input data.")
-
-        # If a dict was given, decide which scaler save with the model.
-
-        if isinstance(scaler, dict):
-            if "minmax" in dataset_name:
-                scaler = scaler.get("minmax")
-            elif "standard" in dataset_name:
-                scaler = scaler.get("standard")
-            else:
-                scaler = None
-                print("Dataset without scaler detected. No scaler will be saved.")
-
-        # Load the data to train.
+        # Load the data to train
+        X_train = self.dict_train[dataset_name]
         test_key = dataset_name.replace("train","test")
         X_test = self.dict_test[test_key]
         y_train = self.dict_train["y_train"]
         y_test = self.dict_test["y_test"]
 
-        # Concat to train with the whole data.
+        # Concat to train with the whole data (100% data)
         X_full = pd.concat([X_train, X_test])
         y_full = pd.concat([y_train, y_test])
 
-        # Save the Features.
+        # Save the Features
         features = X_full.columns.tolist()
 
-        # Train the model.
+        # Train the model on 100% of the data
         model = self.models[model_name]
+        print(f"⏳ Retraining '{model_name}' on 100% of data (Train + Test)...")
+        if is_stacking:
+             print("   (This will take a moment due to internal Cross-Validation)")
+             
         model.fit(X_full, y_full)
 
 
         # Initialize the "artifact", the container with all the information to save.
-        artifact = {}
-        artifact["model_name"] = model_name
-        artifact["model"] = model
-        artifact["features"] = features
+        artifact = {
+            "model_name": model_name,
+            "model": model,
+            "features": features
+        }
         if scaler:
             artifact["scaler"] = scaler
         if selector:
@@ -942,7 +961,7 @@ class ModelTrainer:
         file_path = os.path.join(folder_path, f"{model_name}_best.pkl")
         with open(file_path, "wb") as f:
             pickle.dump(artifact, f)
-            print(f"📦 Artifact Saved: {file_path}")
+            print(f"✅ 📦 Artifact successfully saved at: {file_path}")
 
     def retrain_model(self, model_path: str, new_dataset_name: str) -> None:
         """
@@ -1332,7 +1351,7 @@ class MLOrchestrator:
         df_w_out, df_wo_out = self.feat_engineer.auto_process_data(save_encoder_data=save_data)
 
         # Initialize a dictionary with both datasets, so we can iterate through them.
-        datasets= {"with_outliers": df_w_out, "without_ouliers": df_wo_out}
+        datasets= {"with_outliers": df_w_out, "without_outliers": df_wo_out}
 
         # Create empty dicts, so the data created by the iteration remains.
         merged_train = {}
